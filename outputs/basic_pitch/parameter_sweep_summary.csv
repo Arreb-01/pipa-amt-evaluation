@@ -1,0 +1,7 @@
+config,onset_threshold,frame_threshold,min_note_length,num_notes,pitch_min,pitch_max,pitch_range,duration_mean
+default,0.5,0.3,127.7,90,60,84,24,0.2270
+low_threshold,0.3,0.2,127.7,355,55,89,34,0.2084
+high_threshold,0.7,0.5,127.7,9,70,79,9,0.1899
+short_notes,0.5,0.3,50,154,55,89,34,0.1436
+very_sensitive,0.2,0.1,50,6254,21,108,87,0.4126
+pipa_tuned,0.35,0.25,80,231,55,89,34,0.1773
