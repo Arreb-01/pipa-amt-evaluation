@@ -12,7 +12,7 @@ The pipa (琵琶) presents distinctive challenges that are underrepresented in m
 - **Percussive attacks (弹, 挑, 扫):** Varied plucking techniques produce diverse attack transients not captured in piano-centric training data.
 - **Non-12-TET pitch material:** While the modern pipa uses frets (semi-tone spacing), expressive playing frequently produces pitches between semitones.
 
-This study evaluates three AMT systems on an excerpt from "Night of the Torch Festival" (《火把节之夜》), a celebrated pipa piece by composer Wu Junsheng. We survey six systems in total, run three locally, analyze failures, and propose and evaluate improvements.
+This study evaluates three AMT systems on an excerpt from "Night of the Torch Festival" (《火把节之夜》), a celebrated pipa piece by composer Wu Junsheng. We survey seven systems in total, run three locally, analyze failures, and propose and evaluate improvements through parameter tuning, audio pre-processing, and post-processing pipelines.
 
 ---
 
@@ -88,7 +88,23 @@ This study evaluates three AMT systems on an excerpt from "Night of the Torch Fe
 
 **Paper:** Kong, Q., et al. "High-Resolution Piano Transcription with Pedals by Regressing Onset and Offset Times." IEEE/ACM TASLP 2021. [arXiv:2010.01815](https://arxiv.org/abs/2010.01815)
 
-### 2.6 AnthemScore (Lunaverus)
+### 2.6 ReconVAT (Kin Wai Cheuk et al.)
+
+**Architecture:** A semi-supervised framework built on top of U-Net models for AMT. ReconVAT augments the standard U-Net with two key components: (1) a spectrogram reconstruction loss that forces the model to learn robust audio representations, and (2) Virtual Adversarial Training (VAT), which improves generalization by generating adversarial perturbations on unlabeled data. The model outputs onset and frame predictions through separate output heads.
+
+**Training data:** Labeled: MAPS (piano) and MusicNet (strings, woodwinds). Unlabeled: MAESTRO v2.0.0, plus additional recordings from YouTube and IMSLP for continual learning experiments. Audio is downsampled to 16 kHz.
+
+**Supported instruments:** Piano, strings (violin, viola, cello), and woodwinds (flute, clarinet, oboe). Multi-instrument transcription is supported via separate models per instrument family.
+
+**Output format:** MIDI files and TSV (tab-separated values) note annotations.
+
+**Access:** GitHub (KinWaiCheuk/ReconVAT), PyTorch-based. Requires Python 3.7+ and FFmpeg for audio preprocessing. Pretrained models available for piano and string transcription.
+
+**Key contribution:** ReconVAT is the only semi-supervised AMT framework among surveyed tools. In the few-shot setting for MusicNet strings, it achieves note-wise F1 of 61.0% and note-with-offset-wise F1 of 41.6% — improvements of 22.2% and 62.5% over supervised baselines. Its ability to leverage unlabeled data makes it theoretically more adaptable to instruments outside its training distribution.
+
+**Paper:** Cheuk, K. W., Herremans, D., & Su, L. "ReconVAT: A Semi-Supervised Automatic Music Transcription Framework for Low-Resource Real-World Data." ACM Multimedia 2021. [arXiv:2107.04954](https://arxiv.org/abs/2107.04954)
+
+### 2.7 AnthemScore (Lunaverus)
 
 **Architecture:** Custom CNN treating note detection as an image recognition problem on Constant-Q Transform spectrograms (4 bins per note). Uses long-and-skinny convolutions along time and frequency dimensions with ResNet-style skip connections. 88 output nodes for polyphonic multi-label classification.
 
@@ -100,7 +116,7 @@ This study evaluates three AMT systems on an excerpt from "Night of the Torch Fe
 
 **Access:** Commercial desktop application (Windows/macOS/Linux). Free trial available.
 
-### 2.7 Comparative Summary
+### 2.8 Comparative Summary
 
 | Tool | Architecture | Instruments | Output | Open Source | Pipa Suitability |
 |------|-------------|-------------|--------|-------------|-----------------|
@@ -109,6 +125,7 @@ This study evaluates three AMT systems on an excerpt from "Night of the Torch Fe
 | Onsets & Frames | CNN + BiLSTM/Transformer | Piano only | MIDI | Yes | Very Low — piano-specific |
 | Omnizart | Multiple CNN/CRNN models | Piano, drums, chords, vocal, 11 orchestral | MIDI, CSV | Yes | Low — Western orchestral only |
 | Piano Transcription | CNN (PANNs) + Transformer | Piano only | MIDI + pedals | Yes | Very Low — piano-specific |
+| ReconVAT | U-Net + VAT (semi-supervised) | Piano, strings, woodwinds | MIDI, TSV | Yes | Moderate — semi-supervised, better generalization potential |
 | AnthemScore | Custom CNN (ResNet-style) | Primarily piano | MusicXML, MIDI | No | Low — piano-focused |
 
 ---
@@ -150,7 +167,8 @@ MT3 and Onsets and Frames could not be run locally due to Python version constra
 ### 3.4 Evaluation Criteria
 
 - **Qualitative:** Visual comparison of piano roll outputs against the audio spectrogram and chromagram. Listening comparison of original audio vs. synthesized MIDI.
-- **Quantitative:** Note count, pitch range, note density, duration statistics. Full mir_eval metrics were not computable due to the absence of a precise ground-truth MIDI transcription of this specific recording.
+- **Quantitative:** Note count, pitch range, note density, duration statistics.
+- **Cross-tool metrics:** Since ground-truth MIDI is unavailable, we employ three proxy metrics for quantitative comparison: (1) pairwise mir_eval transcription F1 scores between tools, measuring inter-tool agreement; (2) note onset density correlation (Pearson r) over 1-second windows; (3) pitch distribution KL divergence. These metrics do not measure accuracy but reveal how consistently different tools capture the same musical content.
 
 ---
 
@@ -204,13 +222,74 @@ Comparing the three tools reveals consistent patterns:
 3. **Tremolo passages are systematically mishandled.** Neither tool correctly identifies 轮指 as rapid repetitions of a single pitch — they either miss them entirely (Basic Pitch) or detect spurious harmonics (Piano Transcription).
 4. **Pitch bend techniques are invisible.** None of the three tools captures 推/拉/吟/揉 pitch inflections (though Basic Pitch's pitch bend output could theoretically help, it was not prominent in our results).
 
+### 4.6 Quantitative Cross-Tool Comparison
+
+Since ground-truth MIDI is unavailable, we use cross-tool agreement metrics to quantify how consistently the tools capture the same musical content.
+
+#### 4.6.1 Note Density Correlation
+
+We computed Pearson correlations of note-onset density (1-second windows) across all five tool configurations:
+
+| Pair | Pearson r |
+|------|-----------|
+| Basic Pitch (default) ↔ pipa-tuned | **0.889** |
+| Basic Pitch (pipa-tuned) ↔ Improved | **0.773** |
+| Basic Pitch (default) ↔ Piano Transcription | 0.511 |
+| Basic Pitch (pipa-tuned) ↔ Piano Transcription | 0.579 |
+| Basic Pitch (default) ↔ librosa pyin | 0.290 |
+| librosa pyin ↔ Piano Transcription | 0.317 |
+| librosa pyin ↔ Improved | 0.340 |
+
+The Basic Pitch family (default, pipa-tuned, improved) shows high internal consistency (r > 0.77). The non-neural pyin baseline has low correlation with all neural tools (r < 0.35), confirming that statistical pitch tracking produces fundamentally different temporal patterns.
+
+#### 4.6.2 Pitch Distribution KL Divergence
+
+KL divergence between pitch histograms reveals how differently tools distribute detections across pitch:
+
+| Pair | KL Divergence |
+|------|---------------|
+| Basic Pitch (default) ↔ pipa-tuned | 0.107 |
+| Basic Pitch (default) ↔ Improved | 0.174 |
+| Basic Pitch (pipa-tuned) ↔ Improved | 1.015 |
+| librosa pyin ↔ Piano Transcription | **20.485** |
+| Piano Transcription ↔ Improved | 6.767 |
+
+The enormous KL divergence between pyin and Piano Transcription (20.49) confirms that these tools target completely different pitch ranges. The low divergence within the Basic Pitch family (< 1.02) shows they detect notes in similar pitch regions.
+
+#### 4.6.3 Pairwise Transcription F1
+
+Using mir_eval with onset_tolerance=50ms and pitch_tolerance=0.5 semitones, pairwise F1 scores between tools are universally low:
+
+| Reference → Estimate | Precision | Recall | F1 |
+|----------------------|-----------|--------|-----|
+| pipa-tuned → default | 0.378 | 0.147 | 0.212 |
+| pipa-tuned → Improved | 0.331 | 0.182 | 0.235 |
+| default → Improved | 0.079 | 0.111 | 0.092 |
+| pyin → pipa-tuned | 0.082 | 0.077 | 0.080 |
+
+Even the best pairwise F1 (0.235 between pipa-tuned and improved) is low, indicating that small changes in parameter settings or post-processing produce notably different note-level transcriptions. This sensitivity to configuration highlights the fundamental difficulty of pipa AMT: there is no stable "correct" answer that tools converge on.
+
+#### 4.6.4 Temporal Coverage
+
+The fraction of 1-second windows containing at least one detected note:
+
+| Tool | Coverage |
+|------|----------|
+| librosa pyin | **94.7%** |
+| Basic Pitch (pipa-tuned) | 72.6% |
+| Improved | 69.5% |
+| Piano Transcription | 62.1% |
+| Basic Pitch (default) | 44.2% |
+
+pyin achieves the best temporal coverage, consistent with its design goal of continuous pitch tracking. The improved version maintains 69.5% coverage (vs. 44.2% for default Basic Pitch), a 57% relative improvement.
+
 ---
 
 ## 5. Improvement Experiments
 
 ### 5.1 Approach
 
-We selected Basic Pitch as the improvement target because it offered the cleanest (if sparse) starting point. We explored two orthogonal improvement strategies: **(A) inference parameter tuning** and **(B) post-processing**.
+We selected Basic Pitch as the improvement target because it offered the cleanest (if sparse) starting point. We explored three orthogonal improvement strategies: **(A) inference parameter tuning**, **(B) audio pre-processing**, and **(C) post-processing**. Additionally, we conducted an **ablation study** to quantify each step's individual contribution.
 
 ### 5.2 Experiment A: Parameter Sweep
 
@@ -232,7 +311,23 @@ We ran Basic Pitch with six parameter configurations:
 - The `very_sensitive` configuration (onset=0.2, frame=0.1) produced massive over-detection (6,254 notes), demonstrating that the model's raw frame-level outputs contain significant noise.
 - The **pipa_tuned** configuration represents our best balance between recall and precision.
 
-### 5.3 Experiment B: Post-Processing Pipeline
+### 5.3 Experiment B: Audio Pre-Processing
+
+We investigated whether audio pre-processing could improve transcription quality by making the input signal more "familiar" to the model.
+
+**Method:** We applied spectral gating denoising — estimating a noise floor from the first 0.5 seconds of audio, then suppressing spectral bins below 1.5× the noise threshold. The audio was also peak-normalized to [-1, 1] before and after denoising.
+
+**Results:** Running Basic Pitch with the pipa_tuned configuration on the denoised audio produced **237 notes** (vs. 231 on the original). The mean duration was nearly identical (0.172s vs. 0.177s), and the pitch range was the same (MIDI 55–89).
+
+| Configuration | Notes | Mean Duration | Pitch Range |
+|--------------|-------|---------------|-------------|
+| pipa_tuned (original audio) | 231 | 0.177s | 55–89 |
+| pipa_tuned (denoised audio) | 237 | 0.172s | 55–89 |
+| Difference | +6 (+2.6%) | −0.005s | — |
+
+**Conclusion:** Spectral denoising has negligible impact on Basic Pitch's output. This is expected: Basic Pitch already performs internal feature extraction with its CNN front-end, which is robust to moderate noise levels. The pipa recording used in this study is studio-quality with minimal background noise, so denoising provides no benefit. More aggressive pre-processing (e.g., pitch shifting to align with piano range, timbre transfer) might yield larger improvements but risks introducing artifacts.
+
+### 5.4 Experiment C: Post-Processing Pipeline
 
 We applied a multi-stage post-processing pipeline to the `pipa_tuned` output:
 
@@ -247,7 +342,7 @@ We applied a multi-stage post-processing pipeline to the `pipa_tuned` output:
 5. **Pitch smoothing:** Apply median filtering (window=5) to remove isolated pitch outliers (>3 semitones from median).
    - 127 → 127 notes (no outliers detected)
 
-### 5.4 Improvement Results
+### 5.5 Improvement Results
 
 | Metric | Original (default) | Pipa-Tuned | Post-Processed (Final) |
 |--------|-------------------|------------|----------------------|
@@ -263,13 +358,51 @@ We applied a multi-stage post-processing pipeline to the `pipa_tuned` output:
 - The **maximum duration of 1.43s** (vs 0.686s original) reflects successful merging of tremolo passages into single sustained events.
 - The pitch range was cleaned from the over-wide 55–89 range back to 60–84 by the filtering pipeline.
 
+### 5.6 Experiment D: Ablation Study
+
+To quantify each pipeline step's individual contribution, we conducted two ablation analyses: **cumulative** (adding steps one by one) and **leave-one-out** (removing one step at a time).
+
+#### Cumulative Ablation
+
+| Step | Notes | Δ | Mean Duration |
+|------|-------|---|---------------|
+| 1. Raw pipa-tuned | 231 | — | 177ms |
+| 2. + Pitch range filter | 224 | −7 | 178ms |
+| 3. + Short note filter (>60ms) | 224 | 0 | 178ms |
+| 4. + Gap filling (<50ms) | 134 | **−90** | 300ms |
+| 5. + Tremolo merging (<100ms) | 125 | −9 | 327ms |
+| 6. + Pitch smoothing (medfilt) | 125 | 0 | 327ms |
+
+**Key findings:**
+
+- **Gap filling is the most impactful step**, reducing note count by 40% (224→134) while increasing mean duration by 69% (178ms→300ms). This confirms that Basic Pitch's pipa-tuned output contains many fragmented detections of the same musical note.
+- **Pitch range filtering removes 7 notes** outside the pipa's playable range (MIDI >84), a modest but necessary correction.
+- **Short note filtering and pitch smoothing have no effect** in this configuration, since the minimum note length from parameters (80ms) already exceeds the 60ms threshold, and no pitch outliers were detected.
+- **Tremolo merging removes an additional 9 notes**, consolidating 轮指 passages with slightly longer gaps (50–100ms).
+
+#### Leave-One-Out Ablation
+
+| Configuration | Notes | Mean Duration |
+|--------------|-------|---------------|
+| Full pipeline | 125 | 327ms |
+| Remove pitch range filter | 131 | 319ms |
+| Remove short note filter | 125 | 327ms |
+| Remove gap filling | 125 | 327ms |
+| Remove tremolo merging | 125 | 327ms |
+| Remove pitch smoothing | 125 | 327ms |
+| No pipeline (raw) | 231 | 255ms |
+
+A surprising finding: removing gap filling or tremolo merging individually does **not** change the result. This is because the two steps are **functionally redundant** — tremolo merging (100ms gap threshold) subsumes gap filling (50ms threshold). When gap filling is removed, tremolo merging catches the same note pairs. Only when both are removed (i.e., no pipeline) does the note count return to 231.
+
+**Implication:** The pipeline can be simplified to three effective steps: pitch range filtering, a single merge step (either gap filling or tremolo merging), and optional pitch smoothing. The separate gap-filling step can be eliminated without changing the output.
+
 ---
 
 ## 6. Discussion: Why AMT Models Struggle with Pipa Music
 
 ### 6.1 Training Data Bias
 
-All evaluated systems were trained exclusively on Western instruments. The most common training datasets — MAESTRO (piano), MAPS (piano), Slakh2100 (synthetic Western instruments) — contain zero examples of pipa or any traditional Chinese instrument. This is the **root cause** of poor performance: the models have never learned the pipa's spectral signature.
+All evaluated systems were trained exclusively on Western instruments. The most common training datasets — MAESTRO (piano), MAPS (piano), Slakh2100 (synthetic Western instruments) — contain zero examples of pipa or any traditional Chinese instrument. This is the **root cause** of poor performance: the models have never learned the pipa's spectral signature. ReconVAT's semi-supervised approach offers a potential path forward — it can leverage unlabeled pipa recordings to improve generalization — but its base architecture is still U-Net trained on Western instrument spectrograms.
 
 ### 6.2 Timbral Mismatch
 
@@ -318,15 +451,17 @@ Recent work on Chinese instrument research (e.g., the CMusic Database for guzhen
 
 ## 7. Conclusion
 
-This study evaluated three automatic music transcription systems — Basic Pitch, librosa pyin, and Piano Transcription Inference — on a pipa excerpt from "Night of the Torch Festival." All three tools showed significant limitations:
+This study surveyed seven AMT systems and evaluated three — Basic Pitch, librosa pyin, and Piano Transcription Inference — on a pipa excerpt from "Night of the Torch Festival." All three tools showed significant limitations:
 
 - **Basic Pitch** (90 notes) was too conservative, missing much of the musical content.
-- **librosa pyin** (246 notes) provided better coverage but with fragmented and noisy output.
+- **librosa pyin** (246 notes) provided the best temporal coverage (94.7%) but with fragmented and noisy output.
 - **Piano Transcription** (460 notes) severely over-detected, treating pipa harmonics as separate notes.
 
-Through parameter tuning (lower thresholds, shorter minimum note length) and a post-processing pipeline (pitch range filtering, gap filling, tremolo merging, pitch smoothing), we improved Basic Pitch's output from 90 to 127 notes with more musically coherent durations.
+Cross-tool quantitative analysis confirmed high disagreement: pairwise mir_eval F1 scores peaked at 0.235, and pitch distribution KL divergence between pyin and Piano Transcription reached 20.5, indicating fundamentally different interpretations of the same audio.
 
-The fundamental bottleneck is **training data** — no publicly available AMT model has been exposed to pipa music during training. Building a pipa-aware transcription system will require pipa-specific datasets with technique annotations, continuous pitch representations, and architectures that can model the instrument's unique performance vocabulary.
+Through three improvement strategies applied to Basic Pitch: (A) parameter tuning (6 configurations, best: pipa_tuned), (B) audio pre-processing (spectral denoising — negligible impact, +2.6% notes), and (C) a post-processing pipeline, we improved the output from 90 to 125 notes with 44% longer mean duration (227ms → 327ms). Ablation analysis revealed that gap filling / tremolo merging is the most impactful step, and that these two steps are functionally redundant — the pipeline can be simplified to pitch range filtering + a single merge step.
+
+The fundamental bottleneck is **training data** — no publicly available AMT model has been exposed to pipa music during training. ReconVAT's semi-supervised framework offers the most promising path forward, as it could leverage unlabeled pipa recordings. Building a pipa-aware transcription system will require pipa-specific datasets with technique annotations, continuous pitch representations, and architectures that can model the instrument's unique performance vocabulary.
 
 ---
 
@@ -344,9 +479,11 @@ The fundamental bottleneck is **training data** — no publicly available AMT mo
 
 6. Lunaverus. "Music Transcription with Convolutional Neural Networks." Technical blog post, 2016.
 
-7. Chang, S. & Dixon, S. "YourMT3+: Open-Source Multi-Task Music Transcription." MLSP 2024. [arXiv:2407.04822](https://arxiv.org/abs/2407.04822)
+7. Cheuk, K. W., Herremans, D., & Su, L. "ReconVAT: A Semi-Supervised Automatic Music Transcription Framework for Low-Resource Real-World Data." ACM Multimedia 2021. [arXiv:2107.04954](https://arxiv.org/abs/2107.04954)
 
-8. CCMusic Database. [arXiv:2503.18802](https://arxiv.org/pdf/2503.18802)
+8. Chang, S. & Dixon, S. "YourMT3+: Open-Source Multi-Task Music Transcription." MLSP 2024. [arXiv:2407.04822](https://arxiv.org/abs/2407.04822)
+
+9. CCMusic Database. [arXiv:2503.18802](https://arxiv.org/pdf/2503.18802)
 
 ---
 
@@ -372,9 +509,11 @@ All MIDI files, plots, and CSV data are available in the following directory str
 作业5/
 ├── outputs/
 │   ├── basic_pitch/          # Basic Pitch outputs (6 configurations)
+│   ├── basic_pitch_denoised/ # Basic Pitch on denoised audio
+│   ├── preprocessed/         # Denoised audio file
 │   ├── pyin_baseline/        # librosa pyin output
 │   └── piano_transcription/  # Piano Transcription output
 ├── improvement/              # Improved Basic Pitch output
-├── evaluation/plots/         # All visualization plots
+├── evaluation/plots/         # All visualization plots (20+ figures)
 └── tools/                    # All Python scripts used
 ```

@@ -29,4 +29,7 @@ piano_transcription_inference_data/
 
 # Large generated files (keep structure, re-generate locally)
 tools/audio_mono.wav
+tools/audio_denoised.wav
+outputs/preprocessed/*.wav
 plan.md
+*.zip

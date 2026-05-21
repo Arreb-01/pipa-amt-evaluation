@@ -19,27 +19,38 @@ This project evaluates multiple AI-based AMT tools on an excerpt from **"Night o
 | [Onsets and Frames](https://github.com/magenta/magenta) (Magenta) | CNN + BiLSTM / Transformer | Piano only | No (dep conflicts) |
 | [Omnizart](https://github.com/Music-and-Culture-Technology-Lab/omnizart) | Multiple CNN/CRNN models | 11 orchestral instruments | No (build fails on Windows) |
 | [Piano Transcription](https://github.com/qiuqiangkong/piano_transcription_inference) (ByteDance) | CNN (PANNs) + Transformer | Piano + pedals | Yes |
+| [ReconVAT](https://github.com/KinWaiCheuk/ReconVAT) | U-Net + VAT (semi-supervised) | Piano, strings, woodwinds | No (dep issues) |
 | [AnthemScore](https://www.lunaverus.com) (Lunaverus) | Custom CNN (ResNet-style) | Primarily piano | N/A (commercial) |
 | librosa pyin | Statistical (pYIN algorithm) | Monophonic | Yes (baseline) |
 
 ### Evaluation Results
 
-| Tool | Notes Detected | Pitch Range | Mean Duration |
-|------|---------------|-------------|---------------|
-| Basic Pitch | 90 | C4–C6 (MIDI 60–84) | 0.227s |
-| librosa pyin | 246 | D♯2–B♭5 (MIDI 39–82) | 0.313s |
-| Piano Transcription | 460 | F4–G♯6 (MIDI 65–91) | 0.425s |
-| **Improved (ours)** | **127** | **C4–C6 (MIDI 60–84)** | **0.320s** |
+| Tool | Notes Detected | Pitch Range | Mean Duration | Coverage |
+|------|---------------|-------------|---------------|----------|
+| Basic Pitch | 90 | C4–C6 (MIDI 60–84) | 0.227s | 44.2% |
+| librosa pyin | 246 | D♯2–B♭5 (MIDI 39–82) | 0.313s | 94.7% |
+| Piano Transcription | 460 | F4–G♯6 (MIDI 65–91) | 0.425s | 62.1% |
+| **Improved (ours)** | **125** | **C4–C6 (MIDI 60–84)** | **0.327s** | **69.5%** |
 
 ### Improvement Pipeline
 
-We improved Basic Pitch's output through:
+We improved Basic Pitch's output through three strategies:
 
-1. **Parameter tuning** — Lower onset/frame thresholds, shorter minimum note length (pipa-tuned config)
-2. **Pitch range filtering** — Constrain to pipa's playable range (MIDI 38–84)
-3. **Tremolo merging** — Detect and consolidate 轮指 passages (rapid same-pitch repetitions)
-4. **Gap filling** — Merge same-pitch notes separated by short silences
-5. **Pitch smoothing** — Median filter to remove isolated pitch outliers
+**A. Parameter tuning** — 6 configurations tested; pipa-tuned (onset=0.35, frame=0.25, min_note=80ms) gave best results.
+
+**B. Audio pre-processing** — Spectral denoising had negligible impact (+2.6% notes), confirming the model's robustness to noise.
+
+**C. Post-processing pipeline:**
+1. **Pitch range filtering** — Constrain to pipa's playable range (MIDI 38–84)
+2. **Gap filling / Tremolo merging** — Merge same-pitch notes with short gaps (ablation study shows these are functionally redundant)
+3. **Pitch smoothing** — Median filter to remove isolated pitch outliers
+
+### Quantitative Cross-Tool Analysis
+
+Without ground truth MIDI, we measured inter-tool agreement:
+- **Note density correlation:** Basic Pitch variants correlate strongly (r=0.77–0.89); pyin correlates poorly with all neural tools (r<0.35)
+- **Pitch distribution KL divergence:** pyin vs Piano Transcription: 20.5 (fundamentally different pitch ranges)
+- **Pairwise mir_eval F1:** Maximum 0.235 — all tools disagree on specific note placement
 
 ## Project Structure
 
@@ -47,22 +58,27 @@ We improved Basic Pitch's output through:
 ├── 火把节之夜/                  # Source audio + score image
 ├── tools/                       # All Python scripts
 │   ├── preprocess.py            # Audio preprocessing (stereo→mono)
+│   ├── preprocess_denoise.py    # Spectral denoising
 │   ├── run_basic_pitch.py       # Run Basic Pitch
 │   ├── run_basic_pitch_sweep.py # Parameter sweep (6 configs)
+│   ├── run_basic_pitch_denoised.py # Basic Pitch on denoised audio
 │   ├── run_pyin_baseline.py     # librosa pyin baseline
 │   ├── run_piano_transcription.py
 │   ├── postprocess_improvement.py # Post-processing pipeline
 │   ├── compare_all.py           # Tool comparison plots
-│   └── final_comparison.py      # Final visualization
+│   ├── final_comparison.py      # Final visualization
+│   ├── mir_eval_comparison.py   # Quantitative cross-tool metrics
+│   └── ablation_study.py        # Pipeline ablation analysis
 ├── outputs/                     # Raw tool outputs (MIDI + CSV)
 │   ├── basic_pitch/
+│   ├── basic_pitch_denoised/
 │   ├── pyin_baseline/
 │   └── piano_transcription/
 ├── improvement/                 # Improved transcription
 ├── evaluation/plots/            # All visualization plots
 ├── report/
 │   └── report.md               # Full academic report
-└── plan.md                     # Project plan
+```
 ```
 
 ## Key Findings
@@ -101,12 +117,20 @@ python tools/run_piano_transcription.py
 # Parameter sweep
 python tools/run_basic_pitch_sweep.py
 
+# Audio pre-processing experiment
+python tools/preprocess_denoise.py
+python tools/run_basic_pitch_denoised.py
+
 # Post-processing improvements
 python tools/postprocess_improvement.py
 
 # Generate comparison plots
 python tools/compare_all.py
 python tools/final_comparison.py
+
+# Quantitative analysis
+python tools/mir_eval_comparison.py
+python tools/ablation_study.py
 ```
 
 ### Audio Source
@@ -120,6 +144,7 @@ The test audio is "Night of the Torch Festival" (《火把节之夜》) performe
 3. Hawthorne, C., et al. "Onsets and Frames: Dual-Objective Piano Transcription." ISMIR 2018. [arXiv:1710.11153](https://arxiv.org/abs/1710.11153)
 4. Kong, Q., et al. "High-Resolution Piano Transcription with Pedals by Regressing Onset and Offset Times." IEEE/ACM TASLP 2021. [arXiv:2010.01815](https://arxiv.org/abs/2010.01815)
 5. Chang, S., et al. "Omnizart: A General Toolbox for Automatic Music Transcription." JOSS 2021. [arXiv:2106.00497](https://arxiv.org/abs/2106.00497)
+6. Cheuk, K. W., Herremans, D., & Su, L. "ReconVAT: A Semi-Supervised Automatic Music Transcription Framework for Low-Resource Real-World Data." ACM MM 2021. [arXiv:2107.04954](https://arxiv.org/abs/2107.04954)
 
 ## License
 
